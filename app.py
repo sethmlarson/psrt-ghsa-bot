@@ -111,7 +111,7 @@ def apply_to_repo(repo: Repository, cve_api: CveApi) -> None:
 
 
 def main() -> None:
-    gh_client_private_key = base64.b64decode(os.environ["GH_CLIENT_PRIVATE_KEY"]).decode()
+    gh_client_private_key = base64.b64decode(os.environ["GH_CLIENT_PRIVATE_KEY"]).decode().strip()
     github_app = GithubIntegration(
         auth=AppAuth(os.environ["GH_CLIENT_ID"], gh_client_private_key)
     )
