@@ -18,8 +18,5 @@ jobs:
       - run: |
           python app.py
         env:
-          GH_CLIENT_ID: ${{ env.GH_CLIENT_ID }}
           GH_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
-          CVE_USERNAME: ${{ env.CVE_USERNAME }}
           CVE_API_KEY: ${{ secrets.CVE_API_KEY }}
-          CVE_ENV: ${{ env.CVE_ENV }}
