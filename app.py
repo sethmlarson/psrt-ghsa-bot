@@ -112,7 +112,7 @@ def apply_to_repo(repo: Repository, cve_api: CveApi) -> None:
 
 def main() -> None:
     github_app = GithubIntegration(
-        auth=AppAuth(os.environ["GITHUB_CLIENT_ID"], os.environ["GITHUB_CLIENT_SECRET"])
+        auth=AppAuth(os.environ["GH_CLIENT_ID"], os.environ["GH_CLIENT_SECRET"])
     )
     cve_api = CveApi(
         org="PSF",
