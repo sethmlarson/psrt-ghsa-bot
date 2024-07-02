@@ -1,5 +1,5 @@
 """GitHub application which applies the PSRT process for GitHub Security Advisories"""
-
+import base64
 import datetime
 import os
 import typing
@@ -111,8 +111,9 @@ def apply_to_repo(repo: Repository, cve_api: CveApi) -> None:
 
 
 def main() -> None:
+    gh_client_private_key = base64.b64decode(os.environ["GH_CLIENT_PRIVATE_KEY"]).decode()
     github_app = GithubIntegration(
-        auth=AppAuth(os.environ["GH_CLIENT_ID"], os.environ["GH_CLIENT_SECRET"])
+        auth=AppAuth(os.environ["GH_CLIENT_ID"], gh_client_private_key)
     )
     cve_api = CveApi(
         org="PSF",
