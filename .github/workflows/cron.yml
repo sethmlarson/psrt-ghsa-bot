@@ -20,6 +20,7 @@ jobs:
         env:
           GH_CLIENT_ID: ${{ vars.GH_CLIENT_ID }}
           GH_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
+          GH_CLIENT_PRIVATE_KEY: ${{ secrets.GH_CLIENT_PRIVATE_KEY }}
           CVE_USERNAME: ${{ vars.CVE_USERNAME }}
           CVE_API_KEY: ${{ secrets.CVE_API_KEY }}
           CVE_ENV: ${{ vars.CVE_ENV }}
