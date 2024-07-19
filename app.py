@@ -13,6 +13,9 @@ from github.Repository import Repository
 from github.RepositoryAdvisory import RepositoryAdvisory
 
 
+PSRT_GITHUB_TEAM_SLUG = "psrt"
+
+
 class RepositoryAdvisoryWithTeams(RepositoryAdvisory):
     """Patch for PyGithub to support the 'collaborating_teams' field"""
 
@@ -101,10 +104,11 @@ def apply_to_repo(repo: Repository, cve_api: CveApi) -> None:
 
         # If the PSRT GitHub team hasn't been added to the repository
         # we append it to the advisory.
-        if "python/psrt" not in security_advisory.collaborating_teams:
+        if PSRT_GITHUB_TEAM_SLUG not in security_advisory.collaborating_teams:
             # Maintain all existing teams during the update.
-            edit_kwargs["collaborating_teams"] = ["python/psrt"] + list(
-                security_advisory.collaborating_teams
+            edit_kwargs["collaborating_teams"] = (
+                [PSRT_GITHUB_TEAM_SLUG]
+                + list(security_advisory.collaborating_teams)
             )
 
         # Apply updates, if any, to the security advisory.
