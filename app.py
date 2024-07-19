@@ -18,7 +18,7 @@ class RepositoryAdvisoryWithTeams(RepositoryAdvisory):
 
     @property
     def collaborating_teams(self) -> list[str]:
-        return self._collaborating_teams.value
+        return self._collaborating_teams
 
     def edit(
         self,
@@ -53,7 +53,9 @@ class RepositoryAdvisoryWithTeams(RepositoryAdvisory):
 
     def _useAttributes(self, attributes: dict[str, typing.Any]) -> None:
         if "collaborating_teams" in attributes:
-            self._collaborating_teams = attributes["collaborating_teams"]
+            # We only need the slugs, makes it easier to compare later.
+            collaborating_teams = [team["slug"] for team in attributes["collaborating_teams"]]
+            self._collaborating_teams = collaborating_teams
         super()._useAttributes(attributes)
 
 
