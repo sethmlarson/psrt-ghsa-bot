@@ -85,7 +85,7 @@ def test_appends_psrt_github_team_to_security_advisories(state) -> None:
         owner="owner",
         repo="repo",
         ghsa_id="GHSA-xxxx-xxxx-xxxx",
-        data={"collaborating_teams": ["psrt"]},
+        data={"collaborating_teams": ["psrt", "python/other-team"]},
     )
 
 
@@ -125,13 +125,13 @@ def test_reserves_cve_id_for_draft_security_advisories(
         owner="owner",
         repo="repo",
         ghsa_id="GHSA-xxxx-xxxx-xxxx",
-        data={"cve_id": cve_id, "collaborating_teams": ["psrt"]},
+        data={"cve_id": cve_id},
     )
 
 
 @pytest.mark.parametrize("state", ["triage", "closed", "published"])
 def test_does_not_reserve_cve_id_for_triage_security_advisories(state) -> None:
-    security_advisory = _create_advisory_dict(state, None, ["psrt"])
+    security_advisory = _create_advisory_dict(state, None, [])
 
     github = mock.Mock()
     cve_api = mock.Mock()
@@ -173,7 +173,7 @@ def test_update_collaborating_users() -> None:
         owner="owner",
         repo="repo",
         ghsa_id="GHSA-xxxx-xxxx-xxxx",
-        data={"collaborating_teams": ["psrt"], "collaborating_users": ["alice", "octocat"]},
+        data={"collaborating_users": ["alice", "octocat"]},
     )
 
 
