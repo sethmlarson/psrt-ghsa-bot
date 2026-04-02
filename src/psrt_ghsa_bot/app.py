@@ -4,6 +4,7 @@ import base64
 import csv
 import datetime
 import os
+import re
 import typing
 
 import urllib3
@@ -100,6 +101,19 @@ def apply_to_repo(
             continue
 
         print(f"    📋 Processing {ghsa_id} (state: {state})")
+
+        # If the summary contains '[CLOSE]', '[CLOSED]', '[COMPLETE]',
+        # or '[COMPLETED]' then we can close the ticket.
+        summary = security_advisory.get("summary", "")
+        if re.search(r"\[(?:CLOSED?|COMPLETED?)\]", summary.upper()) is not None:
+            github.rest.security_advisories.update_repository_advisory(
+                owner=owner,
+                repo=repo,
+                ghsa_id=ghsa_id,
+                data={"state": "closed"},
+            )
+            print(f"    📋 Closed {ghsa_id}")
+            continue
 
         # Maintain a dictionary of updates to make and then submit them all at once.
         patch_data = {}
