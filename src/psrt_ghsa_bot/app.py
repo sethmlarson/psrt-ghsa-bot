@@ -30,7 +30,7 @@ def load_psrt_members_from_devguide() -> set[str]:
     that aren't in the org team to be added automatically to
     GHSA advisories.
     """
-    psrt_csv_url = "https://raw.githubusercontent.com/python/devguide/refs/heads/main/developer-workflow/psrt.csv"
+    psrt_csv_url = "https://raw.githubusercontent.com/python/devguide/refs/heads/main/security/psrt.csv"
     resp = urllib3.request(
         "GET", psrt_csv_url, timeout=10, redirect=False, retries=urllib3.Retry(total=5, backoff_factor=2)
     )
