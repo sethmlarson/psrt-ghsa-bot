@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "quarterly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    cooldown:
+      # Actions should still be inspected manually, as currently this cooldown
+      # can be bypassed: https://github.com/dependabot/dependabot-core/issues/13078
+      default-days: 14
