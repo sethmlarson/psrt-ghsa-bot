@@ -96,6 +96,64 @@ def get_repository_advisories(
         raise RuntimeError("Request to paginate advisories failed.")
 
 
+def get_security_advisory_credits(
+    github: GitHub,
+    security_advisory: dict[str, typing.Any],
+) -> list[dict[str, str]]:
+    """Generates a list of credits to apply to a security
+    advisory, such as developing or reviewing a remediation.
+    Respects credits that already exist on an advisory.
+    """
+
+    credits = []
+
+    def credit_if_uncredited(login: str, type: str) -> None:
+        # GHSA only allows one credit type per user,
+        # so we don't want to overwrite existing credits.
+        nonlocal credits
+        if any(c["login"] == login for c in (security_advisory["credits"] + credits)):
+            return
+        credits.append(
+            {
+                "login": login,
+                "type": type,
+            }
+        )
+
+    if (private_fork := security_advisory.get("private_fork")) is not None:
+        private_fork_owner = private_fork["owner"]["login"]
+        private_fork_repo = private_fork["name"]
+
+        pull_requests = json.loads(
+            github.rest.pulls.list(
+                owner=private_fork_owner,
+                repo=private_fork_repo,
+                state="open",
+            ).content
+        )
+        for pull_request in pull_requests:
+            # fmt: off
+            credit_if_uncredited(
+                login=pull_request["user"]["login"],
+                type="remediation_developer"
+            )
+            # fmt: on
+            reviews = json.loads(
+                github.rest.pulls.list_reviews(
+                    owner=private_fork_owner,
+                    repo=private_fork_repo,
+                    pull_number=pull_request["number"],
+                ).content
+            )
+            for review in reviews:
+                credit_if_uncredited(
+                    login=review["user"]["login"],
+                    type="remediation_reviewer",
+                )
+
+    return credits
+
+
 def github_client_request(client: typing.Any, method: str, url: str, params: dict[str, str | int]) -> typing.Any:
     """Sends a raw HTTP request using a GitHub API client"""
     headers = {"X-GitHub-Api-Version": client._REST_API_VERSION}
@@ -183,6 +241,10 @@ def apply_to_repo(github: GitHub, owner: str, repo: str, cve_api: CveApi, *, res
             collaborating_teams.add(PSRT_GITHUB_TEAM_SLUG)
             patch_data["collaborating_teams"] = sorted(collaborating_teams)
             print(f"       ➕ Will ensure team present: {PSRT_GITHUB_TEAM_SLUG}")
+
+        # Find new credits for the security advisory.
+        if credits := get_security_advisory_credits(github, security_advisory):
+            patch_data["credits"] = credits
 
         # Apply updates, if any, to the security advisory.
         if patch_data:
