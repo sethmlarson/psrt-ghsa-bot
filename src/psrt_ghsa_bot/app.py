@@ -96,6 +96,75 @@ def get_repository_advisories(
         raise RuntimeError("Request to paginate advisories failed.")
 
 
+def get_security_advisory_credits(
+    github: GitHub,
+    security_advisory: dict[str, typing.Any],
+) -> list[dict[str, str]]:
+    """Generates a list of credits to apply to a security
+    advisory, such as developing or reviewing a remediation.
+    Respects credits that already exist on an advisory.
+    """
+    credits = (security_advisory.get("credits", None) or [])[:]
+
+    def credit_if_uncredited(login: str, type: str) -> None:
+        # GHSA only allows one credit type per user,
+        # so we don't want to overwrite existing credits.
+        if any(c["login"].lower() == login.lower() for c in credits):
+            return
+        credits.append(
+            {
+                "login": login,
+                "type": type,
+            }
+        )
+
+    if (private_fork := security_advisory.get("private_fork")) is not None:
+        private_fork_owner = private_fork["owner"]["login"]
+        private_fork_repo = private_fork["name"]
+
+        try:
+            # Pagination shouldn't be necessary here, there isn't likely
+            # to be more than 100 pull requests on a single GHSA private repo.
+            # Usually there'll be 2 at most.
+            pull_requests = json.loads(
+                github.rest.pulls.list(
+                    owner=private_fork_owner,
+                    repo=private_fork_repo,
+                    state="open",
+                    per_page=100,
+                ).content
+            )
+        except RequestFailed:
+            capture_exception()
+            raise RuntimeError("Request to list pull requests failed") from None
+
+        for pull_request in pull_requests:
+            pull_request_author = pull_request["user"]["login"]
+            credit_if_uncredited(login=pull_request_author, type="remediation_developer")
+            try:
+                reviews = json.loads(
+                    github.rest.pulls.list_reviews(
+                        owner=private_fork_owner,
+                        repo=private_fork_repo,
+                        pull_number=pull_request["number"],
+                    ).content
+                )
+            except RequestFailed:
+                capture_exception()
+                raise RuntimeError("Request to list pull requests reviews failed") from None
+
+            for review in reviews:
+                review_login = review["user"]["login"]
+                if review_login == pull_request_author:
+                    continue  # Developers can't be reviewers too.
+                credit_if_uncredited(
+                    login=review_login,
+                    type="remediation_reviewer",
+                )
+
+    return sort_security_advisory_credits(credits)
+
+
 def github_client_request(client: typing.Any, method: str, url: str, params: dict[str, str | int]) -> typing.Any:
     """Sends a raw HTTP request using a GitHub API client"""
     headers = {"X-GitHub-Api-Version": client._REST_API_VERSION}
@@ -117,6 +186,11 @@ def reserve_one_cve(cve_api: CveApi) -> str:
     cve_ids = [cve["cve_id"] for cve in resp["cve_ids"]]
     assert len(cve_ids) == 1
     return cve_ids[0]
+
+
+def sort_security_advisory_credits(credits: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Sorts the 'credits' field in a GitHub Security Advisory for comparison"""
+    return sorted(credits, key=lambda c: (c["login"], c["type"]))
 
 
 def apply_to_repo(github: GitHub, owner: str, repo: str, cve_api: CveApi, *, reserve_cves: bool = True) -> None:
@@ -183,6 +257,13 @@ def apply_to_repo(github: GitHub, owner: str, repo: str, cve_api: CveApi, *, res
             collaborating_teams.add(PSRT_GITHUB_TEAM_SLUG)
             patch_data["collaborating_teams"] = sorted(collaborating_teams)
             print(f"       ➕ Will ensure team present: {PSRT_GITHUB_TEAM_SLUG}")
+
+        # Find new credits for the security advisory.
+        existing_credits = sort_security_advisory_credits(security_advisory.get("credits", None) or [])
+        new_credits = get_security_advisory_credits(github, security_advisory)
+        if new_credits and existing_credits != new_credits:
+            patch_data["credits"] = new_credits
+            print("       📋 Will add credits for developing and reviewing remediation")
 
         # Apply updates, if any, to the security advisory.
         if patch_data:

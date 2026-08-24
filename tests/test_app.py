@@ -1,4 +1,5 @@
 import datetime
+import json
 from unittest import mock
 
 import pytest
@@ -43,7 +44,6 @@ def _create_advisory_dict(state, cve_id, collaborating_teams, summary=""):
         "cve_id": cve_id,
         "collaborating_teams": [{"slug": team} for team in collaborating_teams],
         "collaborating_users": [{"login": "octocat", "id": 1, "type": "User"}],
-        "private_fork": {"name": "repo-ghsa-xxxx-xxxx-xxxx", "owner": {"login": "owner"}},
     }
 
 
@@ -250,6 +250,148 @@ def test_accepts_advisory_with_accept_tag(summary, cve_id, cve_reserve_response)
         ghsa_id="GHSA-xxxx-xxxx-xxxx",
         data={"state": "draft", "cve_id": cve_id},
     )
+
+
+def test_get_security_advisory_credits_no_private_fork():
+    github = mock.Mock()
+    credits = app.get_security_advisory_credits(
+        github=github,
+        security_advisory={
+            "private_fork": None,
+        },
+    )
+    assert credits == []
+
+
+def test_get_security_advisory_credits_no_prs():
+    github = mock.Mock()
+    pulls_list = mock.Mock()
+    pulls_list.content = "[]"
+    github.rest.pulls.list.return_value = pulls_list
+    credits = app.get_security_advisory_credits(
+        github=github,
+        security_advisory={
+            "private_fork": {
+                "owner": {"login": "fork-owner"},
+                "name": "fork-name",
+            },
+        },
+    )
+    assert credits == []
+    github.rest.pulls.list.assert_called_with(
+        owner="fork-owner",
+        repo="fork-name",
+        state="open",
+        per_page=100,
+    )
+
+
+def test_get_security_advisory_credits():
+    github = mock.Mock()
+
+    pulls_list = mock.Mock()
+    pulls_list.content = json.dumps([{"number": 1, "user": {"login": "author"}}])
+    github.rest.pulls.list.return_value = pulls_list
+
+    reviews_list = mock.Mock()
+    reviews_list.content = json.dumps([{"user": {"login": "reviewer1"}}, {"user": {"login": "reviewer2"}}])
+    github.rest.pulls.list_reviews.return_value = reviews_list
+
+    credits = app.get_security_advisory_credits(
+        github=github,
+        security_advisory={
+            "private_fork": {
+                "owner": {"login": "fork-owner"},
+                "name": "fork-name",
+            },
+            "credits": [
+                {"type": "coordinator", "login": "reviewer1"},
+            ],
+        },
+    )
+
+    # reviewer1 is kept as 'coordinator', not 'remediation_reviewer'.
+    assert credits == [
+        {"login": "author", "type": "remediation_developer"},
+        {"login": "reviewer1", "type": "coordinator"},
+        {"login": "reviewer2", "type": "remediation_reviewer"},
+    ]
+
+
+def test_get_security_advisory_credits_self_review():
+    github = mock.Mock()
+
+    pulls_list = mock.Mock()
+    pulls_list.content = json.dumps([{"number": 1, "user": {"login": "author"}}])
+    github.rest.pulls.list.return_value = pulls_list
+
+    reviews_list = mock.Mock()
+    reviews_list.content = json.dumps([{"user": {"login": "author"}}])
+    github.rest.pulls.list_reviews.return_value = reviews_list
+
+    credits = app.get_security_advisory_credits(
+        github=github,
+        security_advisory={
+            "private_fork": {
+                "owner": {"login": "fork-owner"},
+                "name": "fork-name",
+            },
+            "credits": [],
+        },
+    )
+
+    # Developer is favored over reviewer.
+    assert credits == [{"login": "author", "type": "remediation_developer"}]
+
+
+@pytest.mark.parametrize("remove_credits", [(), ("reviewer1",), ("reviewer1", "reviewer2")])
+def test_get_security_advisory_credits_no_change(remove_credits: tuple[str, ...]) -> None:
+    github = mock.Mock()
+    cve_api = mock.Mock()
+
+    pulls_list = mock.Mock()
+    pulls_list.content = json.dumps([{"number": 1, "user": {"login": "author"}}])
+    github.rest.pulls.list.return_value = pulls_list
+
+    reviews_list = mock.Mock()
+    reviews_list.content = json.dumps([{"user": {"login": "reviewer1"}}, {"user": {"login": "reviewer2"}}])
+    github.rest.pulls.list_reviews.return_value = reviews_list
+
+    security_advisory = _create_advisory_dict("draft", "CVE-2026-1234", ["psrt"])
+    security_advisory["private_fork"] = {
+        "owner": {"login": "fork-owner"},
+        "name": "fork-name",
+    }
+    security_advisory["credits"] = [
+        # Deliberately out of sorting order.
+        {"login": "reviewer2", "type": "remediation_reviewer"},
+        {"login": "author", "type": "remediation_developer"},
+        {"login": "reviewer1", "type": "coordinator"},
+    ]
+
+    if remove_credits:
+        security_advisory["credits"] = [c for c in security_advisory["credits"] if c["login"] not in remove_credits]
+
+    with mock.patch("psrt_ghsa_bot.app.get_repository_advisories") as get_repo_advs:
+        get_repo_advs.return_value = [security_advisory]
+
+        app.apply_to_repo(github, "owner", "repo", cve_api)
+
+    if remove_credits:
+        github.rest.security_advisories.update_repository_advisory.assert_called_once_with(
+            owner="owner",
+            repo="repo",
+            ghsa_id="GHSA-xxxx-xxxx-xxxx",
+            data={
+                "credits": [
+                    {"login": "author", "type": "remediation_developer"},
+                    {"login": "reviewer1", "type": "remediation_reviewer"},
+                    {"login": "reviewer2", "type": "remediation_reviewer"},
+                ]
+            },
+        )
+    else:  # Nothing to update.
+        github.rest.security_advisories.update_repository_advisory.assert_not_called()
 
 
 def test_reserve_one_cve_id(cve_reserve_response, cve_id, year) -> None:
